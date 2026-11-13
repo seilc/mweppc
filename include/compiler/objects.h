@@ -71,7 +71,10 @@ enum {
     OBJECT_INTERNAL = 0x10,
     OBJECT_IMPORT = 0x20,
     OBJECT_EXPORT = 0x40,
-    OBJECT_LIB_EXPORT = 0x60
+    OBJECT_LIB_EXPORT = 0x60,
+#if VERSION == VERSION_GC_2_0P3
+    OBJECT_DIRECT_TEMPLATE = 0x80
+#endif
 };
 #pragma pack(push, 2)
 struct ObjectList {

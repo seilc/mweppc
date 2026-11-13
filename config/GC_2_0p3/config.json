@@ -1,0 +1,4 @@
+{
+  "derived_from": "GC_2_0",
+  "description": "BFBB's compiler, second model: 2.0 with every small-data access treated as one through a pointer (with three exceptions) and three of 2.0p2's rules; no original, built from the sources alone"
+}

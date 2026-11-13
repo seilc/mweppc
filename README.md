@@ -6,6 +6,7 @@ A decompilation of the Metrowerks CodeWarrior toolchain. Currently supported ver
 | -------------- | ---------- | ---------------- | --------------- | ------------------- | ------------ | ----------------------------- |
 | GameCube 2.0   | `GC_2_0`   | 2.4.7 build 92   | 4016 / 4065     | 2850 / 4068 (70.1%) | 54.3%        |                               |
 | GameCube 2.0p2 | `GC_2_0p2` | 2.4.7 build 92   | 4019 / 4068     | 2853 / 4071 (70.1%) | 54.3%        | GameCube 2.0 patched for BFBB |
+| GameCube 2.0p3 | `GC_2_0p3` | 2.4.7 build 92   | 4016 / 4065     | 2850 / 4068 (70.1%) | 54.3%        | GameCube 2.0 patched for BFBB |
 | GameCube 2.5   | `GC_2_5`   | 2.4.7 build 105  | 4026 / 4076     | 2860 / 4079 (70.1%) | 54.3%        |                               |
 | GameCube 2.6   | `GC_2_6`   | 2.4.7 build 107  | 4027 / 4077     | 2860 / 4080 (70.1%) | 54.4%        |                               |
 | GameCube 2.7   | `GC_2_7`   | 2.4.7 build 108  | 4033 / 4084     | 2848 / 4087 (69.7%) | 54.2%        |                               |
@@ -18,9 +19,9 @@ A decompilation of the Metrowerks CodeWarrior toolchain. Currently supported ver
   original binary.
 - Currently only the C/C++ compiler has been decompiled (`mwcceppc.exe`). See [future work](#future-work) for more
   information.
-- 2.0p2 is not an official binary; it models the observed side effects of compiling the [*Battle for Bikini
-  Bottom*](https://github.com/bfbbdecomp/bfbb) decompilation against GameCube 2.0 since it seems to have been compiled
-  with a unique patched compiler. See [below](#battle-for-bikini-bottom-20p2) for more information.
+- 2.0p2 and 2.0p3 are not official binaries; they model the observed side effects of compiling the [*Battle for
+  Bikini Bottom*](https://github.com/bfbbdecomp/bfbb) decompilation against GameCube 2.0 since it seems to have been
+  compiled with a unique patched compiler. See [below](#battle-for-bikini-bottom-20p2-and-20p3) for more information.
 
 ## Getting started
 
@@ -122,22 +123,25 @@ These are some of the known bugs of the original Metrowerks compilers (clang rep
 - **Where the clang build differs:** it keeps going where the original crashes, and does not follow a `#pragma
   scheduling` that switches models within one file.
 
-### Battle for Bikini Bottom (2.0p2)
+### Battle for Bikini Bottom (2.0p2 and 2.0p3)
 
 *Battle for Bikini Bottom*'s retail code was built with a 2.0 that no release matches. Its decompilations have used
 binary patches of 2.0 (`2.0p1`, and bfbb-vibe's `2.0p1g`). 2.0p2 is the same idea done using the decompiled source code:
 2.0 with rules of its own, each one measured on BFBB's code. Functions matching retail:
 
-| Compiler  | bfbb (of 7673) | bfbb-vibe (of 7673) | *Ratatouille*'s shared code (of 321) |
-| --------- | -------------- | ------------------- | ------------------------------------ |
-| 2.0p1     | 5474           | 6994                | 208                                  |
-| 2.0p1g    | 5724           | 7579                | 217                                  |
-| **2.0p2** | **5731**       | **7594**            | 217                                  |
+| Compiler  | bfbb (of 7673) | bfbb-vibe (of 7673) | *Ratatouille*'s shared code (of 1911) |
+| --------- | -------------- | ------------------- | ------------------------------------- |
+| 2.0p1     | 5474           | 6989                | 827                                   |
+| 2.0p1g    | 5724           | 7573                | 866                                   |
+| 2.0p2     | 5731           | 7588                | 866                                   |
+| **2.0p3** | **5735**       | **7594**            | **866**                               |
 
-A GameCube prototype of [*Ratatouille*](https://github.com/seilc/rat) using the same engine was used as an independent
-check to deduce the required behavior by compiling it using BFBB's settings.
+bfbb-vibe was measured at [zcanann/bfbb](https://github.com/zcanann/bfbb) 19853863. A GameCube prototype of
+[*Ratatouille*](https://github.com/seilc/rat) using the same engine was used as an independent check to deduce the
+required behavior by compiling it using BFBB's settings: every unit sharing a name with a BFBB unit, scored against
+BFBB's retail object function by function (1911 functions of 83 units pair by symbol name).
 
-Here is everything that got changed from 2.0, all aimed at globals addressed directly in small data (`sym@sda21`), which
+Here is everything 2.0p2 changed from 2.0, all aimed at globals addressed directly in small data (`sym@sda21`), which
 BFBB's developers seemingly required a custom patch to the compiler for to treat more conservatively:
 
 - floating-point literals are not const, and stores may change them;
@@ -147,13 +151,28 @@ BFBB's developers seemingly required a custom patch to the compiler for to treat
 - a load of a small-data global stays inside its loop;
 - two of 2.5's alias analysis changes.
 
+2.0p3 replaces the small-data rules and the float literal rule with one cause: every access addressed off r13 or r2
+(`sym@sda21`: small-data globals and the literal pool, const or not) is treated as an access through an unknown
+pointer. That alone makes stores to small data clobber everything, keeps small-data loads from moving past stores or
+out of loops, and makes float literals behave as if they were not const. Three exceptions make it fit better than
+2.0p2 on all three sets (bfbb gains 4 functions and loses none):
+
+- a `const` object the source file declares itself (not `extern`, not compiler-made) stays a direct access;
+- an aggregate initializer's template stays direct when it holds addresses, or when it is all zero and run-time fields
+  are stored after the copy;
+- a store off r13 or r2 may change every small-data object, `const` ones included.
+
+It keeps 2.0p2's two 2.5 alias analysis changes, and its rule that copy propagation leaves `noregister` locals alone.
+The exact template boundary is not settled: two functions go against it, one each way (`PickNextSoak` and
+`BSP_Read`).
+
 The "stays inside its loop" rule also covers const globals, and only one function needs that: `zParPTankSpawnSnow`,
 whose `snow_life` is declared `const` in the bfbb decompilation but sits in writable data in the retail game, and so is
 probably not `const` at all. With that fixed, the rule may not need to cover const globals; that is for BFBB decomp to
-figure out.
+figure out. 2.0p3 does not need the fix: an `extern const` object stays an access through a pointer.
 
-To use 2.0p2 in a BFBB decompilation, put `build/GC_2_0p2/clang/mwcceppc.exe` in place of the project's 2.0p1
-compiler.
+To use 2.0p3 (or 2.0p2) in a BFBB decompilation, put `build/GC_2_0p3/clang/mwcceppc.exe` (or the native
+`build/GC_2_0p3/native/mwcceppc`) in place of the project's 2.0p1 compiler.
 
 Comparing against the retail game also shows a few places where bfbb's source differs from what the original must have
 been:

@@ -2793,8 +2793,18 @@ ENode* CInit_AutoObject(Object* obj, Type* type, UInt32 qual) {
     newobj = CInit_CreateStaticDataObject(newtype, 0, NULL);
     if (db.list || !CInit_IsAllZero(db.buffer, db.size)) {
         CInit_DeclareReadOnlyData(newobj, db.buffer, db.list, db.size);
+#if VERSION == VERSION_GC_2_0P3
+        if (db.list) {
+            newobj->flags |= OBJECT_DIRECT_TEMPLATE;
+        }
+#endif
     } else {
         CInit_DeclareReadOnlyData(newobj, NULL, NULL, db.size);
+#if VERSION == VERSION_GC_2_0P3
+        if (db.nonconst) {
+            newobj->flags |= OBJECT_DIRECT_TEMPLATE;
+        }
+#endif
     }
 
     indirect_expr = makemonadicnode(obj_expr, EINDIRECT);

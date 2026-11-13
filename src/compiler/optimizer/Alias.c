@@ -9,6 +9,9 @@
 #include "compiler/CopyPropagation.h"
 #include "compiler/CParser.h"
 #include "compiler/objects.h"
+#if VERSION == VERSION_GC_2_0P3
+#include "compiler/ObjGen_PPC_EABI.h"
+#endif
 #include "compiler/PCode.h"
 #include "compiler/PCodeInfo.h"
 #include "compiler/RegisterInfo.h"
@@ -29,6 +32,9 @@ Alias* worst_case_ptr;
 Alias* worst_case_func;
 #endif
 Object worst_case_obj;
+#if VERSION == VERSION_GC_2_0P3
+static Alias* small_data_store_alias;
+#endif
 
 static TypePointer worst_case_memory_type = {TYPEARRAY, 0xFFFFFF, TYPE(&stchar)};
 #if VERSION >= VERSION_GC_2_5
@@ -77,7 +83,7 @@ Alias* make_distinct_virtual_alias(Object* obj, SInt32 offset, SInt32 size) {
     object->name = CParser_GetUniqueName();
     object->flags = obj->flags;
     object->qual = obj->qual;
-#if VERSION == VERSION_GC_2_0P2
+#if VERSION == VERSION_GC_2_0P2 || VERSION == VERSION_GC_2_0P3
     return make_alias(object, 0x7FFFFF, 1);
 #else
     alias = make_alias_set();
@@ -228,6 +234,9 @@ void initialize_aliases(void) {
 
     worst_case_ptr = make_alias_set();
     add_alias_member(worst_case_ptr, make_alias(&worst_case_obj, 0, 0));
+#if VERSION == VERSION_GC_2_0P3
+    small_data_store_alias = make_alias_set();
+#endif
 #if VERSION >= VERSION_GC_2_5
     worst_case_func = make_alias_set();
     add_alias_member(worst_case_func, make_alias(&worst_case_obj, 0, 0));
@@ -263,7 +272,13 @@ found:
             case DLOCAL:
                 break;
             default:
-#if VERSION < VERSION_GC_2_5
+#if VERSION == VERSION_GC_2_0P3
+                if (!is_safe_const(object)) {
+                    add_alias_member(worst_case_ptr, make_alias(object, 0, 0));
+                } else if (object->name->name[0] != '@' && is_16bitdata(object)) {
+                    add_alias_member(small_data_store_alias, make_alias(object, 0, 0));
+                }
+#elif VERSION < VERSION_GC_2_5
                 if (!is_safe_const(object)) {
                     add_alias_member(worst_case_ptr, make_alias(object, 0, 0));
                 }
@@ -949,6 +964,19 @@ static void gather_instruction_alias(PCode* pcode, UInt32* myvec) {
         pcode->alias->object->name->name[0] == '@') {
         pcode->alias = worst_case_ptr;
     }
+#elif VERSION == VERSION_GC_2_0P3
+    if (pcode->alias &&
+        (pcode->alias->type == AliasType_Object || pcode->alias->type == AliasType_ObjectPart) &&
+        pcode->alias->object->datatype != DLOCAL &&
+        pcode->argCount > 2 &&
+        pcode->args[2].kind == PCOp_MEMORY &&
+        (int)pcode->args[2].arg == RefType_Addr16 &&
+        !(pcode->alias->object->flags & OBJECT_DIRECT_TEMPLATE) &&
+        !(is_safe_const(pcode->alias->object) &&
+          pcode->alias->object->name->name[0] != '@' &&
+          pcode->alias->object->sclass != TK_EXTERN)) {
+        pcode->alias = (pcode->flags & fIsWrite) ? small_data_store_alias : worst_case_ptr;
+    }
 #endif
     if (!pcode->alias) {
         pcode->alias = worst_case_ptr;
@@ -998,7 +1026,7 @@ static void gather_instruction_alias(PCode* pcode, UInt32* myvec) {
                                 CError_ASSERT(1250, alias_array[1] == pcode->alias);
                             }
                         } else if (alias_array[1] != worst_case_ptr) {
-#if VERSION != VERSION_GC_2_0P2
+#if VERSION != VERSION_GC_2_0P2 && VERSION != VERSION_GC_2_0P3
                             alias_choice = worst_case_ptr;
 #endif
                         } else {
@@ -1198,6 +1226,10 @@ void gather_alias_info(void) {
         }
     }
 
+#if VERSION == VERSION_GC_2_0P3
+    add_alias_member(small_data_store_alias, worst_case_ptr);
+    n_gathered_aliases = -1;
+#endif
     if (n_gathered_aliases != n_aliases) {
         for (alias = aliases; alias; alias = alias->next) {
             if (alias->type == AliasType_Set) {
